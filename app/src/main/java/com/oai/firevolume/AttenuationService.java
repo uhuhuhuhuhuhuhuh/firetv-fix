@@ -15,6 +15,10 @@ public class AttenuationService extends Service {
     public static final String ACTION_SET = "com.oai.firevolume.SET";
     public static final String ACTION_DISABLE = "com.oai.firevolume.DISABLE";
 
+    public static final int MIN_ATTENUATION_DB = 0;
+    public static final int MAX_ATTENUATION_DB = 15;
+    public static final int ATTENUATION_STEP_DB = 1;
+
     private Equalizer equalizer;
 
     @Override
@@ -24,16 +28,22 @@ public class AttenuationService extends Service {
         if (intent != null && intent.hasExtra(EXTRA_DB)) {
             db = intent.getIntExtra(EXTRA_DB, db);
         }
+        db = clampAttenuation(db);
 
         if ((intent != null && ACTION_DISABLE.equals(intent.getAction())) || db <= 0) {
             disableEffect();
             prefs.edit().putInt(KEY_DB, 0).putString(KEY_ERROR, "").apply();
+            Toast.makeText(this, "Software attenuation off", Toast.LENGTH_SHORT).show();
             stopSelf();
             return START_NOT_STICKY;
         }
 
         applyAttenuation(db);
         return START_STICKY;
+    }
+
+    public static int clampAttenuation(int db) {
+        return Math.max(MIN_ATTENUATION_DB, Math.min(MAX_ATTENUATION_DB, db));
     }
 
     private void applyAttenuation(int db) {
@@ -52,7 +62,7 @@ public class AttenuationService extends Service {
             equalizer.setEnabled(true);
             int actualDb = Math.abs(desired) / 100;
             prefs.edit().putInt(KEY_DB, actualDb).putString(KEY_ERROR, "").apply();
-            Toast.makeText(this, "Global audio attenuation active: -" + actualDb + " dB", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Software attenuation: -" + actualDb + " dB", Toast.LENGTH_SHORT).show();
         } catch (Throwable t) {
             disableEffect();
             String message = "Global equalizer unsupported on this Fire TV";
