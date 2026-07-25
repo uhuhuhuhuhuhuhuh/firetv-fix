@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.media.AudioManager;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -37,7 +38,7 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(28), dp(22), dp(28), dp(22));
+        root.setPadding(dp(28), dp(18), dp(28), dp(18));
         root.setBackgroundColor(Color.rgb(20, 22, 26));
 
         TextView title = text("Fire TV Software Volume", 30, Color.WHITE);
@@ -45,16 +46,17 @@ public class MainActivity extends Activity {
         root.addView(title, fullWidth());
 
         TextView explanation = text(
-                "Lower Android media volume first. If HDMI volume is fixed, try software attenuation.",
+                "Volume Down makes audio quieter by adding 1 dB of attenuation. "
+                        + "Volume Up makes it louder by removing 1 dB.",
                 17, Color.LTGRAY);
         explanation.setGravity(Gravity.CENTER);
-        root.addView(explanation, withTop(dp(10)));
+        root.addView(explanation, withTop(dp(8)));
 
         status = text("", 18, Color.WHITE);
         status.setGravity(Gravity.CENTER);
-        root.addView(status, withTop(dp(20)));
+        root.addView(status, withTop(dp(14)));
 
-        root.addView(label("Android media volume"), withTop(dp(18)));
+        root.addView(label("Android media volume presets"), withTop(dp(14)));
         LinearLayout volumeRow = row();
         volumeRow.addView(button("5%", new View.OnClickListener() {
             @Override public void onClick(View v) { setSystemPercent(5); }
@@ -70,7 +72,7 @@ public class MainActivity extends Activity {
         }));
         root.addView(volumeRow, fullWidth());
 
-        root.addView(label("Software attenuation"), withTop(dp(20)));
+        root.addView(label("Software attenuation presets"), withTop(dp(14)));
         LinearLayout attenuationRow = row();
         attenuationRow.addView(button("Off", new View.OnClickListener() {
             @Override public void onClick(View v) { setAttenuation(0); }
@@ -81,20 +83,38 @@ public class MainActivity extends Activity {
         attenuationRow.addView(button("-12 dB", new View.OnClickListener() {
             @Override public void onClick(View v) { setAttenuation(12); }
         }));
-        Button maximum = button("Maximum", new View.OnClickListener() {
-            @Override public void onClick(View v) { setAttenuation(15); }
+        Button maximum = button("-15 dB", new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                setAttenuation(AttenuationService.MAX_ATTENUATION_DB);
+            }
         });
         attenuationRow.addView(maximum);
         root.addView(attenuationRow, fullWidth());
 
+        LinearLayout keyControlRow = row();
+        keyControlRow.addView(button("Enable volume buttons over other apps", new View.OnClickListener() {
+            @Override public void onClick(View v) { openAccessibilitySettings(); }
+        }));
+        root.addView(keyControlRow, withTop(dp(10)));
+
         TextView note = text(
-                "Some Fire TV firmware blocks both methods. Reopen the app after restarting the Fire TV.",
-                15, Color.GRAY);
+                "Enable Fire TV Volume Button Control in Accessibility for global control. "
+                        + "Some Fire TV remotes send volume commands directly to the television by IR or CEC; "
+                        + "those commands never reach an app and cannot be intercepted.",
+                14, Color.GRAY);
         note.setGravity(Gravity.CENTER);
-        root.addView(note, withTop(dp(20)));
+        root.addView(note, withTop(dp(10)));
 
         setContentView(root);
         maximum.requestFocus();
+    }
+
+    private void openAccessibilitySettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        } catch (Throwable t) {
+            Toast.makeText(this, "Open Fire TV Settings, then Accessibility", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void setSystemPercent(int percent) {
@@ -104,12 +124,28 @@ public class MainActivity extends Activity {
         try {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI);
         } catch (Throwable t) {
-            Toast.makeText(this, "Fire OS rejected the volume change.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Fire OS rejected the media-volume change", Toast.LENGTH_SHORT).show();
         }
         refreshStatus();
     }
 
+    private void adjustAttenuation(int deltaDb) {
+        int current = getSharedPreferences(AttenuationService.PREFS, MODE_PRIVATE)
+                .getInt(AttenuationService.KEY_DB, 0);
+        int next = AttenuationService.clampAttenuation(current + deltaDb);
+
+        if (next == current) {
+            String boundary = next == 0
+                    ? "Attenuation is already off"
+                    : "Maximum attenuation: -" + AttenuationService.MAX_ATTENUATION_DB + " dB";
+            Toast.makeText(this, boundary, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        setAttenuation(next);
+    }
+
     private void setAttenuation(int db) {
+        db = AttenuationService.clampAttenuation(db);
         getSharedPreferences(AttenuationService.PREFS, MODE_PRIVATE)
                 .edit().putInt(AttenuationService.KEY_DB, db).apply();
 
@@ -119,7 +155,7 @@ public class MainActivity extends Activity {
         try {
             startService(intent);
         } catch (Throwable t) {
-            Toast.makeText(this, "Could not start attenuation.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Could not apply attenuation", Toast.LENGTH_LONG).show();
         }
         refreshStatus();
     }
@@ -140,14 +176,12 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
-            int max = Math.max(1, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
-            int current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
-            int delta = keyCode == KeyEvent.KEYCODE_VOLUME_UP ? 1 : -1;
-            try { audioManager.setStreamVolume(AudioManager.STREAM_MUSIC,
-                    Math.max(0, Math.min(max, current + delta)), AudioManager.FLAG_SHOW_UI); }
-            catch (Throwable ignored) { }
-            refreshStatus();
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            adjustAttenuation(AttenuationService.ATTENUATION_STEP_DB);
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            adjustAttenuation(-AttenuationService.ATTENUATION_STEP_DB);
             return true;
         }
         return super.onKeyDown(keyCode, event);
@@ -166,14 +200,14 @@ public class MainActivity extends Activity {
         button.setTextSize(16);
         button.setAllCaps(false);
         button.setOnClickListener(listener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(56), 1f);
-        params.setMargins(dp(5), dp(5), dp(5), dp(5));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(54), 1f);
+        params.setMargins(dp(5), dp(4), dp(5), dp(4));
         button.setLayoutParams(params);
         return button;
     }
 
     private TextView label(String value) {
-        TextView view = text(value, 20, Color.WHITE);
+        TextView view = text(value, 19, Color.WHITE);
         view.setGravity(Gravity.CENTER);
         return view;
     }
