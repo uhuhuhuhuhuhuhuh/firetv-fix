@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Uses compatible volume buttons to adjust Fire TV software attenuation in 1 dB steps.</string>
+</resources>
