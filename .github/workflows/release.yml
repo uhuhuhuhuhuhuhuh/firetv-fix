@@ -66,7 +66,7 @@ jobs:
               FireTV-Software-Volume-SHA256.txt \
               --target "$GITHUB_SHA" \
               --title "Fire TV Software Volume $TAG" \
-              --notes "Adds 1 dB software-attenuation steps controlled by compatible Volume Up and Volume Down key events. Volume Down increases attenuation; Volume Up reduces attenuation. Includes an optional accessibility service for control over other apps. The APK is debug-signed for sideloading and requests no internet permission."
+              --notes "Restores fixed software-attenuation presets: Off, -6 dB, -12 dB, and Maximum (-15 dB). Removes the experimental accessibility and volume-button interception features. The APK is debug-signed for sideloading and requests no internet permission."
           fi
 
-# Release workflow revision: v1.1.0
+# Release workflow revision: v1.2.0
