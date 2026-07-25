@@ -36,6 +36,13 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Resolve app version
+        run: |
+          VERSION=$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle | head -n 1)
+          test -n "$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
+
       - name: Build signed debug APK
         run: gradle --no-daemon :app:assembleDebug
 
@@ -44,20 +51,20 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk FireTV-Software-Volume.apk
           sha256sum FireTV-Software-Volume.apk > FireTV-Software-Volume-SHA256.txt
 
-      - name: Create or update v1.0.0 release
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.0.0 >/dev/null 2>&1; then
-            gh release upload v1.0.0 \
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
               FireTV-Software-Volume.apk \
               FireTV-Software-Volume-SHA256.txt \
               --clobber
           else
-            gh release create v1.0.0 \
+            gh release create "$TAG" \
               FireTV-Software-Volume.apk \
               FireTV-Software-Volume-SHA256.txt \
               --target "$GITHUB_SHA" \
-              --title "Fire TV Software Volume v1.0.0" \
-              --notes "Fire TV utility that attempts to reduce Android media volume and apply software attenuation when a hotel television is locked at maximum HDMI volume. The APK is debug-signed for sideloading and requests no internet permission."
+              --title "Fire TV Software Volume $TAG" \
+              --notes "Adds 1 dB software-attenuation steps controlled by compatible Volume Up and Volume Down key events. Volume Down increases attenuation; Volume Up reduces attenuation. Includes an optional accessibility service for control over other apps. The APK is debug-signed for sideloading and requests no internet permission."
           fi
