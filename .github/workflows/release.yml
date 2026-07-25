@@ -1,0 +1,63 @@
+name: Build and publish APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build signed debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Prepare release assets
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk FireTV-Software-Volume.apk
+          sha256sum FireTV-Software-Volume.apk > FireTV-Software-Volume-SHA256.txt
+
+      - name: Create or update v1.0.0 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.0.0 >/dev/null 2>&1; then
+            gh release upload v1.0.0 \
+              FireTV-Software-Volume.apk \
+              FireTV-Software-Volume-SHA256.txt \
+              --clobber
+          else
+            gh release create v1.0.0 \
+              FireTV-Software-Volume.apk \
+              FireTV-Software-Volume-SHA256.txt \
+              --target "$GITHUB_SHA" \
+              --title "Fire TV Software Volume v1.0.0" \
+              --notes "Fire TV utility that attempts to reduce Android media volume and apply software attenuation when a hotel television is locked at maximum HDMI volume. The APK is debug-signed for sideloading and requests no internet permission."
+          fi
